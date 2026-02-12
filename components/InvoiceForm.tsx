@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Invoice, 
   Quotation, 
@@ -13,91 +12,6 @@ import {
 } from '../types';
 import { CRAFT_DADDY_LOGO_SVG } from '../constants';
 import { calculateLineItem, numberToWords, formatCurrency } from '../services/Calculations';
-
-// --- Sub-components for Form ---
-
-const MarkdownEditor = ({ value, onChange, placeholder }: { value: string, onChange: (val: string) => void, placeholder?: string }) => {
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-    const insertFormat = (tag: string, endTag?: string) => {
-        const el = textareaRef.current;
-        if (!el) return;
-        
-        el.focus();
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        const text = value || '';
-        const before = text.substring(0, start);
-        const selected = text.substring(start, end);
-        const after = text.substring(end);
-        
-        const newText = `${before}${tag}${selected}${endTag || tag}${after}`;
-        onChange(newText);
-        
-        // Use timeout to allow React render cycle to complete before setting selection
-        setTimeout(() => {
-            if (textareaRef.current) {
-                const cursorStart = start + tag.length;
-                const cursorEnd = end + tag.length;
-                textareaRef.current.setSelectionRange(cursorStart, cursorEnd);
-            }
-        }, 0);
-    };
-
-    return (
-        <div className="border border-gray-200 rounded-md bg-white transition-shadow focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500">
-            <div className="flex gap-1 border-b border-gray-100 bg-gray-50/50 p-1">
-                <button type="button" onClick={() => insertFormat('**')} className="p-1 hover:bg-gray-200 rounded text-xs font-bold text-gray-600 min-w-[24px]" title="Bold">B</button>
-                <button type="button" onClick={() => insertFormat('_')} className="p-1 hover:bg-gray-200 rounded text-xs italic text-gray-600 min-w-[24px]" title="Italic">I</button>
-                <div className="w-px bg-gray-200 mx-1"></div>
-                 <button type="button" onClick={() => insertFormat('- ')} className="p-1 hover:bg-gray-200 rounded text-xs text-gray-600 flex items-center justify-center min-w-[24px]" title="Bullet List">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                </button>
-            </div>
-            <textarea
-                ref={textareaRef}
-                className="w-full text-xs text-gray-600 outline-none resize-y bg-transparent p-2 min-h-[60px]"
-                rows={2}
-                placeholder={placeholder}
-                value={value || ''}
-                onChange={(e) => onChange(e.target.value)}
-            ></textarea>
-        </div>
-    );
-};
-
-const SmartNumberInput = ({ value, onChange, className, placeholder, ...props }: any) => {
-    return (
-        <input 
-            type="number"
-            {...props}
-            className={className}
-            value={value}
-            onWheel={(e) => e.currentTarget.blur()}
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => {
-                const val = e.target.value;
-                if (val === '') {
-                    onChange(0);
-                } else {
-                    const num = parseFloat(val);
-                    if (!isNaN(num) && num >= 0) onChange(num);
-                }
-            }}
-            placeholder={placeholder}
-        />
-    );
-};
-
-const RenderMarkdown = ({ text }: { text?: string }) => {
-    if (!text) return null;
-    const html = text
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-        .replace(/_(.*?)_/g, '<i>$1</i>')
-        .replace(/\n/g, '<br/>');
-    return <div className="text-[10px] text-gray-500 mt-1 leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: html }} />;
-};
 
 interface DocumentFormProps {
   userProfile: UserBusinessProfile;
@@ -132,7 +46,7 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
       status: mode === 'invoice' ? InvoiceStatus.DRAFT : QuotationStatus.DRAFT,
       clientId: clients[0]?.id || '',
       items: [
-        { id: '1', description: 'REFLECTIVE JACKET', longDescription: '', hsn: '6210', qty: 225, rate: 100, taxRate: 5 },
+        { id: '1', description: 'REFLECTIVE JACKET', hsn: '6210', qty: 225, rate: 100, taxRate: 5 },
       ],
       placeOfSupply: 'Delhi (07)',
       bankDetails: userProfile.bankAccounts[0],
@@ -229,7 +143,7 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
   const addItem = () => {
     setDocument((prev: any) => ({
       ...prev,
-      items: [...prev.items, { id: Date.now().toString(), description: '', longDescription: '', hsn: '', qty: 1, rate: 0, taxRate: 18 }]
+      items: [...prev.items, { id: Date.now().toString(), description: '', hsn: '', qty: 1, rate: 0, taxRate: 18 }]
     }));
   };
 
@@ -295,6 +209,20 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
       ...prev,
       additionalCharges: (prev.additionalCharges || []).filter((c: AdditionalCharge) => c.id !== id)
     }));
+  };
+
+  const handleRoundUp = () => {
+    const current = totals.preRoundTotal;
+    const target = Math.ceil(current);
+    const diff = target - current;
+    setDocument({ ...document, roundOff: diff });
+  };
+
+  const handleRoundDown = () => {
+    const current = totals.preRoundTotal;
+    const target = Math.floor(current);
+    const diff = target - current;
+    setDocument({ ...document, roundOff: diff });
   };
 
   const handleSave = () => {
@@ -373,7 +301,7 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
         </div>
 
         {/* Main Editor Document */}
-        <div className="max-w-5xl mx-auto bg-white shadow-xl rounded-lg p-8 md:p-12 mb-8 mt-6 relative">
+        <div className="max-w-5xl mx-auto bg-white shadow-xl rounded-lg p-6 md:p-12 mb-8 mt-6 relative">
           {/* Header */}
           <div className="flex flex-col items-center mb-10 group relative">
               <div className="flex items-center gap-2 border-b-2 border-dashed border-gray-300 pb-1 mb-1 hover:border-gray-400 transition">
@@ -555,8 +483,8 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
              <label htmlFor="shipping" className="text-xs text-gray-500 font-medium">Add Shipping Details</label>
           </div>
 
-          {/* Line Items Table */}
-          <div className="mb-4 rounded-t-lg border border-gray-200 overflow-hidden">
+          {/* Line Items Table (Desktop View) */}
+          <div className="hidden md:block mb-4 rounded-t-lg border border-gray-200 overflow-hidden">
               <div className="min-w-full">
                   <div className={`bg-[#8b5cf6] text-white text-xs font-bold py-3 px-3 grid ${GRID_COLS} gap-2 items-center rounded-t-lg`}>
                     <div>#</div>
@@ -588,11 +516,18 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                                       placeholder="Item Name"
                                     />
                                 </div>
-                                <MarkdownEditor 
-                                    value={item.longDescription || ''} 
-                                    onChange={(val) => updateItem(item.id, 'longDescription', val)}
-                                    placeholder="Add description... (supports **bold**, _italic_)"
-                                />
+                                <div className="border border-gray-200 rounded p-2 bg-white relative">
+                                    <div className="flex gap-2 mb-1 border-b border-gray-100 pb-1">
+                                        <button className="p-1 hover:bg-gray-100 rounded">B</button>
+                                        <button className="p-1 hover:bg-gray-100 rounded italic">I</button>
+                                        <button className="p-1 hover:bg-gray-100 rounded underline">U</button>
+                                    </div>
+                                    <textarea 
+                                        className="w-full text-xs text-gray-600 outline-none resize-none bg-transparent"
+                                        rows={3}
+                                        placeholder="Add description..."
+                                    ></textarea>
+                                </div>
                               </div>
                               <div className="pt-1">
                                   <input 
@@ -606,26 +541,29 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                               <div className="pt-1">
                                   <div className="flex items-center">
                                       <span className="mr-1">%</span>
-                                      <SmartNumberInput 
+                                      <input 
+                                        type="number"
                                         className="w-full bg-transparent border-none outline-none text-left"
                                         value={item.taxRate}
-                                        onChange={(val: number) => updateItem(item.id, 'taxRate', val)}
+                                        onChange={e => updateItem(item.id, 'taxRate', parseFloat(e.target.value))}
                                       />
                                   </div>
                               </div>
                               <div className="pt-1">
-                                  <SmartNumberInput 
+                                  <input 
+                                    type="number" 
                                     className="w-full text-left bg-transparent border-b border-transparent hover:border-gray-200 focus:border-indigo-500 outline-none transition-colors"
                                     value={item.qty}
-                                    onChange={(val: number) => updateItem(item.id, 'qty', val)}
+                                    onChange={e => updateItem(item.id, 'qty', parseFloat(e.target.value))}
                                   />
                               </div>
                               <div className="pt-1 flex items-center">
                                   <span className="mr-1 text-gray-500 font-bold">₹</span>
-                                  <SmartNumberInput 
+                                  <input 
+                                    type="number" 
                                     className="w-full bg-transparent border-b border-transparent focus:border-indigo-500 outline-none text-left font-bold text-gray-900"
                                     value={item.rate}
-                                    onChange={(val: number) => updateItem(item.id, 'rate', val)}
+                                    onChange={e => updateItem(item.id, 'rate', parseFloat(e.target.value))}
                                   />
                               </div>
                               <div className="pt-1 text-left font-medium">₹{calc.taxableValue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
@@ -653,6 +591,134 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                     );
                   })}
               </div>
+          </div>
+
+          {/* Line Items Cards (Mobile View) */}
+          <div className="md:hidden space-y-4 mb-8">
+             {document.items.map((item: LineItem, idx: number) => {
+                 const calc = calculateLineItem(item, !!isInterState);
+                 return (
+                    <div key={item.id} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        {/* Header */}
+                        <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                            <span className="font-black text-gray-500 text-lg">{idx + 1}.</span>
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => duplicateItem(item.id)} className="text-gray-400 hover:text-indigo-600 p-1">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                </button>
+                                <button onClick={() => removeItem(item.id)} className="text-gray-400 hover:text-red-500 p-1">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {/* Form Fields - Styled to match reference image (Label left, Input right) */}
+                        <div className="p-4 space-y-4">
+                            {/* Item Name */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">Item</label>
+                                <input 
+                                    type="text" 
+                                    className="w-2/3 text-right font-medium text-gray-900 outline-none bg-transparent focus:text-indigo-600 placeholder-gray-300"
+                                    value={item.description}
+                                    onChange={e => updateItem(item.id, 'description', e.target.value)}
+                                    placeholder="Item Name"
+                                />
+                            </div>
+
+                            {/* HSN */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">HSN/SAC</label>
+                                <input 
+                                    type="text" 
+                                    className="w-2/3 text-right font-medium text-gray-900 outline-none bg-transparent placeholder-gray-300"
+                                    value={item.hsn}
+                                    onChange={e => updateItem(item.id, 'hsn', e.target.value)}
+                                    placeholder="Code"
+                                />
+                            </div>
+
+                             {/* Description Button (Visual placeholder to match reference, actually just spacing or could toggle optional textarea) */}
+                             <div className="pb-2">
+                                <button className="text-indigo-600 text-xs font-bold flex items-center gap-1">
+                                    <span className="text-lg leading-none">+</span> Add Description
+                                </button>
+                             </div>
+
+                            {/* GST Rate */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">GST Rate</label>
+                                <div className="flex items-center justify-end w-2/3">
+                                    <input 
+                                        type="number" 
+                                        className="text-right font-medium text-gray-900 outline-none bg-transparent w-full"
+                                        value={item.taxRate}
+                                        onChange={e => updateItem(item.id, 'taxRate', parseFloat(e.target.value))}
+                                    />
+                                    <span className="text-gray-400 ml-1">%</span>
+                                </div>
+                            </div>
+
+                            {/* Quantity */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">Quantity</label>
+                                <input 
+                                    type="number" 
+                                    className="w-2/3 text-right font-medium text-gray-900 outline-none bg-transparent"
+                                    value={item.qty}
+                                    onChange={e => updateItem(item.id, 'qty', parseFloat(e.target.value))}
+                                />
+                            </div>
+
+                            {/* Rate */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">Rate</label>
+                                <div className="flex items-center justify-end w-2/3">
+                                    <span className="text-gray-400 mr-1">₹</span>
+                                    <input 
+                                        type="number" 
+                                        className="text-right font-medium text-gray-900 outline-none bg-transparent w-full"
+                                        value={item.rate}
+                                        onChange={e => updateItem(item.id, 'rate', parseFloat(e.target.value))}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Amount (Read only) */}
+                            <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                <label className="text-xs font-semibold text-gray-500 w-1/3">Amount</label>
+                                <span className="text-gray-700 font-medium">₹{calc.taxableValue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                            </div>
+
+                             {/* Taxes */}
+                            {isInterState ? (
+                                <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                    <label className="text-xs font-semibold text-gray-500 w-1/3">IGST</label>
+                                    <span className="text-gray-700 font-medium">₹{calc.igst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                        <label className="text-xs font-semibold text-gray-500 w-1/3">CGST</label>
+                                        <span className="text-gray-700 font-medium">₹{calc.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border-b border-gray-50 pb-3">
+                                        <label className="text-xs font-semibold text-gray-500 w-1/3">SGST</label>
+                                        <span className="text-gray-700 font-medium">₹{calc.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Total */}
+                            <div className="flex justify-between items-center pt-2">
+                                <label className="text-sm font-bold text-gray-800 w-1/3">Total</label>
+                                <span className="text-gray-900 font-black text-lg">₹{calc.total.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                            </div>
+
+                        </div>
+                    </div>
+                 );
+             })}
           </div>
 
           <div className="flex justify-between mb-12">
@@ -705,10 +771,11 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                                     <option value="percentage">%</option>
                                 </select>
                                 <div className="relative flex-1">
-                                    <SmartNumberInput 
+                                    <input 
+                                        type="number" 
                                         className="w-full bg-white border border-gray-200 rounded text-xs p-1.5 pl-5 focus:border-indigo-500 outline-none text-right font-medium"
-                                        value={document.discountValue || 0}
-                                        onChange={(val: number) => setDocument({...document, discountValue: val})}
+                                        value={document.discountValue || ''}
+                                        onChange={(e) => setDocument({...document, discountValue: parseFloat(e.target.value) || 0})}
                                         placeholder="0"
                                     />
                                     <span className="absolute left-2 top-1.5 text-gray-400 text-xs">
@@ -744,11 +811,12 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                                           value={charge.label}
                                           onChange={(e) => updateAdditionalCharge(charge.id, 'label', e.target.value)}
                                       />
-                                      <SmartNumberInput 
+                                      <input 
+                                          type="number" 
                                           className="text-xs border-b border-gray-200 focus:border-indigo-500 outline-none bg-transparent py-1 text-right font-medium"
                                           placeholder="0"
-                                          value={charge.amount || 0}
-                                          onChange={(val: number) => updateAdditionalCharge(charge.id, 'amount', val)}
+                                          value={charge.amount || ''}
+                                          onChange={(e) => updateAdditionalCharge(charge.id, 'amount', parseFloat(e.target.value) || 0)}
                                       />
                                       <button 
                                           onClick={() => removeAdditionalCharge(charge.id)}
@@ -929,22 +997,21 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                           <tr key={item.id} className="border-b border-gray-100 break-inside-avoid page-break-inside-avoid">
                               <td className="py-2 px-2">
                                   <div className="font-bold text-gray-800">{item.description}</div>
-                                  <RenderMarkdown text={item.longDescription} />
                               </td>
-                              <td className="py-2 px-1 text-center text-gray-600 align-top pt-2">{item.hsn}</td>
-                              <td className="py-2 px-1 text-center align-top pt-2">{item.taxRate}%</td>
-                              <td className="py-2 px-1 text-center font-medium align-top pt-2">{item.qty}</td>
-                              <td className="py-2 px-1 text-right align-top pt-2">₹{item.rate}</td>
-                              <td className="py-2 px-1 text-right font-medium align-top pt-2">₹{calc.taxableValue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                              <td className="py-2 px-1 text-center text-gray-600">{item.hsn}</td>
+                              <td className="py-2 px-1 text-center">{item.taxRate}%</td>
+                              <td className="py-2 px-1 text-center font-medium">{item.qty}</td>
+                              <td className="py-2 px-1 text-right">₹{item.rate}</td>
+                              <td className="py-2 px-1 text-right font-medium">₹{calc.taxableValue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                               {isInterState ? (
-                                  <td className="py-2 px-1 text-right text-gray-600 align-top pt-2">₹{calc.igst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                  <td className="py-2 px-1 text-right text-gray-600">₹{calc.igst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                               ) : (
                                   <>
-                                    <td className="py-2 px-1 text-right text-gray-600 align-top pt-2">₹{calc.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
-                                    <td className="py-2 px-1 text-right text-gray-600 align-top pt-2">₹{calc.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                    <td className="py-2 px-1 text-right text-gray-600">₹{calc.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                                    <td className="py-2 px-1 text-right text-gray-600">₹{calc.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                                   </>
                               )}
-                              <td className="py-2 px-2 text-right font-bold text-gray-900 align-top pt-2">₹{calc.total.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                              <td className="py-2 px-2 text-right font-bold text-gray-900">₹{calc.total.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
                           </tr>
                       );
                   })}
