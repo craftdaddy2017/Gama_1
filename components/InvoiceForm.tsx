@@ -10,7 +10,7 @@ import {
   CustomField,
   AdditionalCharge
 } from '../types';
-import { CRAFT_DADDY_LOGO_SVG } from '../constants';
+import { INDIAN_STATES, CRAFT_DADDY_LOGO_SVG } from '../constants';
 import { calculateLineItem, numberToWords, formatCurrency } from '../services/Calculations';
 
 interface DocumentFormProps {
@@ -95,9 +95,28 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
   const selectedClient = useMemo(() => clients.find(c => c.id === document.clientId), [clients, document.clientId]);
   
   const isInterState = useMemo(() => {
-    const supplyStateCode = document.placeOfSupply.match(/\((\d+)\)/)?.[1];
-    return supplyStateCode && supplyStateCode !== userProfile.address.stateCode;
-  }, [document.placeOfSupply, userProfile.address.stateCode]);
+    // Extract code from "State (Code)" format e.g., "Delhi (07)" -> "07"
+    const supplyStateMatch = document.placeOfSupply.match(/\((\d+)\)/);
+    const supplyStateCode = supplyStateMatch ? supplyStateMatch[1] : null;
+    
+    const userStateCode = userProfile.address.stateCode;
+
+    // Strict numeric comparison to handle "07" vs "7"
+    if (supplyStateCode && userStateCode) {
+        return parseInt(supplyStateCode, 10) !== parseInt(userStateCode, 10);
+    }
+
+    // Fallback: Name comparison if codes are missing
+    const posLower = document.placeOfSupply.toLowerCase().trim();
+    const userStateLower = userProfile.address.state.toLowerCase().trim();
+    if (posLower && userStateLower) {
+        // If the POS string contains the user state name, assume Intra-state
+        if (posLower.includes(userStateLower)) return false;
+        return true; 
+    }
+
+    return false; // Default to Intra-state
+  }, [document.placeOfSupply, userProfile.address.stateCode, userProfile.address.state]);
 
   const totals = useMemo(() => {
     const itemTotals = (document.items || []).reduce((acc: any, item: LineItem) => {
@@ -132,6 +151,41 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
       finalTotal
     };
   }, [document.items, isInterState, document.discountType, document.discountValue, document.additionalCharges, document.roundOff]);
+
+  const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newClientId = e.target.value;
+    const client = clients.find(c => c.id === newClientId);
+    
+    let newPlaceOfSupply = document.placeOfSupply;
+
+    if (client) {
+        // 1. Try to get State Code from GSTIN (First 2 chars)
+        let code = '';
+        if (client.gstin && client.gstin.length >= 2) {
+            code = client.gstin.substring(0, 2);
+        } else if (client.address?.stateCode) {
+            // 2. Fallback to address state code
+            code = client.address.stateCode;
+        }
+
+        // 3. Find State Name from Constants
+        const stateObj = INDIAN_STATES.find(s => s.code === code);
+        const name = stateObj ? stateObj.name : client.address?.state;
+
+        // 4. Construct standard "State (Code)" string
+        if (name && code) {
+            newPlaceOfSupply = `${name} (${code})`;
+        } else if (name) {
+             newPlaceOfSupply = name;
+        }
+    }
+
+    setDocument(prev => ({
+        ...prev,
+        clientId: newClientId,
+        placeOfSupply: newPlaceOfSupply
+    }));
+  };
 
   const updateItem = (id: string, field: keyof LineItem, value: any) => {
     setDocument((prev: any) => ({
@@ -357,6 +411,23 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                       placeholder="Optional"
                     />
                 </div>
+                
+                {/* Place of Supply Input */}
+                <div className="grid grid-cols-[110px_1fr] items-center gap-2">
+                    <label className="text-gray-500 font-semibold underline decoration-dotted cursor-help">
+                        Place of Supply
+                    </label>
+                    <input 
+                      type="text" 
+                      value={document.placeOfSupply} 
+                      onChange={(e) => setDocument({...document, placeOfSupply: e.target.value})}
+                      className="w-full font-medium text-gray-900 border-b border-gray-200 focus:border-indigo-600 outline-none py-1 transition-colors bg-transparent"
+                      list="state-list"
+                    />
+                    <datalist id="state-list">
+                        {INDIAN_STATES.map(s => <option key={s.code} value={`${s.name} (${s.code})`} />)}
+                    </datalist>
+                </div>
 
                 {/* Custom Fields (PO Number etc) */}
                 {document.customFields?.map((field: CustomField, index: number) => (
@@ -452,7 +523,7 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                       <select 
                           className="border border-gray-200 rounded-md w-full p-2 bg-white text-sm focus:border-indigo-500 outline-none"
                           value={document.clientId}
-                          onChange={(e) => setDocument({...document, clientId: e.target.value})}
+                          onChange={handleClientChange}
                       >
                           {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
@@ -494,8 +565,14 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                     <div className="text-left">Quantity</div>
                     <div className="text-left">Rate</div>
                     <div className="text-left">Amount</div>
-                    <div className="text-left">CGST</div>
-                    <div className="text-left">SGST</div>
+                    {isInterState ? (
+                        <div className="text-center col-span-2">IGST</div>
+                    ) : (
+                        <>
+                          <div className="text-left">CGST</div>
+                          <div className="text-left">SGST</div>
+                        </>
+                    )}
                     <div className="text-left">Total</div>
                     <div></div>
                   </div>
@@ -567,8 +644,18 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                                   />
                               </div>
                               <div className="pt-1 text-left font-medium">₹{calc.taxableValue.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
-                              <div className="pt-1 text-left text-gray-500">₹{calc.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
-                              <div className="pt-1 text-left text-gray-500">₹{calc.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
+                              
+                              {isInterState ? (
+                                  <div className="pt-1 text-center col-span-2 font-medium text-gray-700">
+                                      ₹{calc.igst.toLocaleString('en-IN', {minimumFractionDigits: 2})}
+                                  </div>
+                              ) : (
+                                  <>
+                                      <div className="pt-1 text-left text-gray-500">₹{calc.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
+                                      <div className="pt-1 text-left text-gray-500">₹{calc.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
+                                  </>
+                              )}
+
                               <div className="pt-1 text-left font-bold text-gray-900">₹{calc.total.toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
                               <div className="pt-1 flex justify-center gap-1">
                                 <button 
@@ -739,14 +826,24 @@ const InvoiceForm: React.FC<DocumentFormProps> = ({
                           <span>Amount</span>
                           <span>₹{totals.taxable.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
                       </div>
-                      <div className="flex justify-between font-bold text-gray-700">
-                          <span>SGST</span>
-                          <span>₹{totals.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                      </div>
-                      <div className="flex justify-between font-bold text-gray-700">
-                          <span>CGST</span>
-                          <span>₹{totals.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                      </div>
+
+                      {isInterState ? (
+                           <div className="flex justify-between font-bold text-gray-700">
+                               <span>IGST</span>
+                               <span>₹{totals.igst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                           </div>
+                      ) : (
+                           <>
+                                <div className="flex justify-between font-bold text-gray-700">
+                                    <span>SGST</span>
+                                    <span>₹{totals.sgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                                </div>
+                                <div className="flex justify-between font-bold text-gray-700">
+                                    <span>CGST</span>
+                                    <span>₹{totals.cgst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+                                </div>
+                           </>
+                      )}
 
                       {/* Discount Section */}
                       {showDiscount ? (
